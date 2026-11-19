@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ANM Meteo</string>
+    <string name="widget_description">Vremea oficială ANM, prognoza și alertele active</string>
+    <string name="notification_channel_name">Avertizări Meteo ANM</string>
+    <string name="notification_channel_desc">Alerte meteorologice generale și nowcasting emise de ANM</string>
+</resources>

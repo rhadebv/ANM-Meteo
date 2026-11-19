@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="white">#FFFFFF</color>
+    <color name="soft">#D0E1F2</color>
+    <color name="widget_start">#F21A4B78</color>
+    <color name="widget_end">#F20E243D</color>
+    <color name="widget_stroke">#38FFFFFF</color>
+    <color name="alert_yellow">#FFC107</color>
+    <color name="alert_orange">#FF7043</color>
+    <color name="alert_red">#E53935</color>
+    <color name="ic_launcher_background">#123C56</color>
+</resources>

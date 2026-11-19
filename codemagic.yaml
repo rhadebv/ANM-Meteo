@@ -1,0 +1,47 @@
+workflows:
+  android-debug:
+    name: ANM Meteo v1.0 - Test, Lint & Debug APK
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      java: 17
+    scripts:
+      - name: Configure Android SDK
+        script: echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      - name: Generate Gradle Wrapper
+        script: gradle wrapper --gradle-version 8.9 && chmod +x gradlew
+      - name: Run Unit Tests
+        script: ./gradlew testDebugUnitTest
+      - name: Run Android Lint
+        script: ./gradlew lintDebug
+      - name: Build Debug APK
+        script: ./gradlew assembleDebug
+    artifacts:
+      - app/build/outputs/apk/debug/*.apk
+      - app/build/reports/tests/**/*
+      - app/build/reports/lint-results-*.html
+    publishing:
+      email:
+        recipients:
+          - build@anmmeteo.ro
+        notify:
+          success: true
+          failure: true
+
+  android-release:
+    name: ANM Meteo v1.0 - Release APK
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      java: 17
+    scripts:
+      - name: Configure Android SDK
+        script: echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      - name: Generate Gradle Wrapper
+        script: gradle wrapper --gradle-version 8.9 && chmod +x gradlew
+      - name: Run Unit Tests
+        script: ./gradlew testDebugUnitTest
+      - name: Build Release APK
+        script: ./gradlew assembleRelease
+    artifacts:
+      - app/build/outputs/apk/release/*.apk
