@@ -59,12 +59,36 @@ class AnmApiService(
             val rawName = firstString(props, "nume", "name", "statie", "station", "denumire").uppercase(Locale.US)
             if (rawName == "—" || rawName.isBlank()) continue
 
-            val tempRaw = firstString(props, "temperatura", "temp", "temperature")
-            val windRaw = firstString(props, "vant", "wind", "viteza_vant")
-            val humRaw = firstString(props, "umezeala", "umiditate", "humidity")
-            val pressRaw = firstString(props, "presiune", "pressure")
-            val condRaw = firstString(props, "nebulozitate", "cloud", "stare_vreme", "fenomen")
-            val dateRaw = firstString(props, "data", "date", "timestamp", "ora")
+            val tempRaw = firstStringMatching(
+                props,
+                exactKeys = listOf("tempe", "temperatura", "temp", "temperature"),
+                prefixes = listOf("temp")
+            )
+            val windRaw = firstStringMatching(
+                props,
+                exactKeys = listOf("vant", "viteza_vant", "wind", "vânt"),
+                prefixes = listOf("vant", "wind")
+            )
+            val humRaw = firstStringMatching(
+                props,
+                exactKeys = listOf("umezeala", "umiditate", "humidity", "ur"),
+                prefixes = listOf("umez", "umid", "humid")
+            )
+            val pressRaw = firstStringMatching(
+                props,
+                exactKeys = listOf("presiune", "pressure", "pres"),
+                prefixes = listOf("presi", "press")
+            )
+            val condRaw = firstStringMatching(
+                props,
+                exactKeys = listOf("nebulozitate", "cloud", "stare_vreme", "fenomen", "fenomen_e"),
+                prefixes = listOf("nebul", "fenomen", "stare")
+            )
+            val dateRaw = firstStringMatching(
+                props,
+                exactKeys = listOf("actualizat", "data", "date", "timestamp", "ora"),
+                prefixes = listOf("actualiz", "data", "ora")
+            )
 
             out += WeatherStation(
                 name = rawName,
@@ -72,7 +96,7 @@ class AnmApiService(
                 tempRaw = tempRaw,
                 tempCelsius = WeatherMath.parseNumber(tempRaw),
                 windRaw = windRaw,
-                windKmh = WeatherMath.parseNumber(windRaw),
+                windKmh = WeatherMath.parseWindKmh(windRaw),
                 humidityRaw = humRaw,
                 humidityPercent = WeatherMath.parseNumber(humRaw)?.toInt(),
                 pressureRaw = pressRaw,
@@ -100,7 +124,7 @@ class AnmApiService(
                 null
             } else {
                 val rawDate = firstString(obj, "data", "date", "zi", "day", "valabilitate")
-                val cond = firstString(obj, "fenomen", "descriere", "description", "stare", "weather")
+                val cond = firstString(obj, "fenomen", "prognoza", "descriere", "description", "stare", "weather")
                 DailyForecast(
                     dayLabel = if (rawDate == "—") "" else rawDate,
                     condition = if (cond == "—") "Prognoză ANM" else cond.replaceFirstChar { it.uppercase() },
@@ -122,20 +146,33 @@ class AnmApiService(
     fun parseWarningsJson(raw: String, source: String): List<WeatherAlert> {
         val allObjects = collectObjects(raw)
         return allObjects.mapNotNull { obj ->
-            val title = firstString(obj, "titlu", "title", "headline", "fenomen", "mesaj")
-            val body = firstString(obj, "descriere", "description", "text", "zone", "continut")
-            val interval = firstString(obj, "valabilitate", "interval", "data_expirare", "expira")
+            val rawTitle = firstString(obj, "titlu", "title", "headline", "fenomen", "mesaj")
+            val rawBody = firstString(obj, "descriere", "description", "text", "zone", "continut", "mesaj")
+            val rawInterval = firstString(obj, "valabilitate", "interval", "data_expirare", "expira")
+            val rawColor = firstString(obj, "culoare", "cod", "nivel", "severity", "tip")
 
-            if (title == "—" && body == "—") {
+            if (rawTitle == "—" && rawBody == "—") {
                 null
             } else {
-                val resolvedTitle = if (title == "—") source else title
-                val resolvedBody = if (body == "—") "" else body
-                val combinedUpper = (resolvedTitle + " " + resolvedBody).uppercase(Locale.US)
+                val cleanTitleAll = WeatherMath.cleanHtmlText(if (rawTitle == "—") "" else rawTitle)
+                val cleanBodyAll = WeatherMath.cleanHtmlText(if (rawBody == "—") "" else rawBody)
+                val cleanInterval = WeatherMath.cleanHtmlText(if (rawInterval == "—") "" else rawInterval)
+
+                val (resolvedTitle, resolvedBody) = splitCleanTitleAndBody(
+                    cleanTitle = cleanTitleAll,
+                    cleanBody = cleanBodyAll,
+                    fallbackSource = source
+                )
+
+                val severitySourceText = buildString {
+                    if (rawColor != "—") append(rawColor).append(' ')
+                    append(resolvedTitle).append(' ').append(resolvedBody)
+                }.uppercase(Locale.US)
+
                 val severity = when {
-                    combinedUpper.contains("ROȘU") || combinedUpper.contains("ROSU") -> AlertSeverity.RED
-                    combinedUpper.contains("PORTOCALIU") -> AlertSeverity.ORANGE
-                    combinedUpper.contains("GALBEN") -> AlertSeverity.YELLOW
+                    severitySourceText.contains("ROȘU") || severitySourceText.contains("ROSU") -> AlertSeverity.RED
+                    severitySourceText.contains("PORTOCALIU") -> AlertSeverity.ORANGE
+                    severitySourceText.contains("GALBEN") -> AlertSeverity.YELLOW
                     else -> AlertSeverity.INFO
                 }
                 val hashId = "${source}_${resolvedTitle}_${resolvedBody.take(64)}".hashCode().toString()
@@ -145,13 +182,50 @@ class AnmApiService(
                     title = resolvedTitle,
                     body = resolvedBody,
                     source = source,
-                    validInterval = if (interval == "—") "" else interval
+                    validInterval = cleanInterval
                 )
             }
         }
             .distinctBy { it.title + it.body }
             .sortedByDescending { it.severity.priority }
             .take(30)
+    }
+
+    private fun splitCleanTitleAndBody(
+        cleanTitle: String,
+        cleanBody: String,
+        fallbackSource: String
+    ): Pair<String, String> {
+        val primary = cleanTitle.ifBlank { cleanBody }
+        if (primary.isBlank()) return fallbackSource to ""
+
+        val lines = primary.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        if (cleanTitle.isNotBlank() && cleanBody.isNotBlank() && cleanTitle != cleanBody) {
+            val shortTitle = if (cleanTitle.length <= 120 && !cleanTitle.contains('\n')) {
+                cleanTitle
+            } else {
+                lines.take(2).joinToString(" — ").take(120)
+            }
+            return shortTitle to cleanBody
+        }
+
+        if (lines.size == 1) {
+            val single = lines.first()
+            return if (single.length <= 120) {
+                single to ""
+            } else {
+                single.take(117) + "..." to single
+            }
+        }
+
+        val headerLines = if (lines.size >= 2 && lines[0].length + lines[1].length <= 110) {
+            lines.take(2).joinToString(" — ")
+        } else {
+            lines.first().take(120)
+        }
+        val bodyStartIndex = if (lines.size >= 2 && lines[0].length + lines[1].length <= 110) 2 else 1
+        val remainingBody = lines.drop(bodyStartIndex).joinToString("\n")
+        return headerLines to remainingBody
     }
 
     private fun collectObjects(raw: String): List<JSONObject> {
@@ -189,6 +263,29 @@ class AnmApiService(
             if (v != null && v !is JSONObject && v !is JSONArray) {
                 val str = v.toString().trim()
                 if (str.isNotEmpty() && str != "null") return str
+            }
+        }
+        return "—"
+    }
+
+    private fun firstStringMatching(
+        obj: JSONObject,
+        exactKeys: List<String>,
+        prefixes: List<String>
+    ): String {
+        val exact = firstString(obj, *exactKeys.toTypedArray())
+        if (exact != "—") return exact
+
+        val iter = obj.keys()
+        while (iter.hasNext()) {
+            val key = iter.next()
+            val lower = key.lowercase(Locale.US)
+            if (prefixes.any { lower.startsWith(it) }) {
+                val v = obj.opt(key)
+                if (v != null && v !is JSONObject && v !is JSONArray) {
+                    val str = v.toString().trim()
+                    if (str.isNotEmpty() && str != "null") return str
+                }
             }
         }
         return "—"

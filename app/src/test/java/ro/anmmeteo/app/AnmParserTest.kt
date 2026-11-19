@@ -1,6 +1,7 @@
 package ro.anmmeteo.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import ro.anmmeteo.app.data.remote.AnmApiService
@@ -11,7 +12,7 @@ class AnmParserTest {
     private val api = AnmApiService()
 
     @Test
-    fun `parseStationsJson extracts GeoJSON station features accurately`() {
+    fun `parseStationsJson extracts ANM tempe wind and humidity accurately`() {
         val sampleJson = """
             {
               "type": "FeatureCollection",
@@ -19,12 +20,12 @@ class AnmParserTest {
                 {
                   "properties": {
                     "nume": "BRASOV GHIMBAV",
-                    "temperatura": "24.2",
-                    "vant": "18 km/h",
+                    "tempe": "14.2",
+                    "vant": "slab, 2.5 m/s",
                     "umezeala": "54",
-                    "presiune": "1015.4",
-                    "nebulozitate": "Parțial noros",
-                    "data": "2026-11-19 14:00"
+                    "presiune": "1015.4 mb",
+                    "nebulozitate": "Cer partial noros",
+                    "actualizat": "19-11-2026 14:00"
                   }
                 }
               ]
@@ -36,32 +37,32 @@ class AnmParserTest {
         val st = stations.first()
         assertEquals("BRASOV GHIMBAV", st.name)
         assertEquals("Brașov", st.displayName)
-        assertEquals(24.2, st.tempCelsius!!, 0.01)
+        assertEquals(14.2, st.tempCelsius!!, 0.01)
+        assertEquals(9.0, st.windKmh!!, 0.01)
         assertEquals(54, st.humidityPercent)
+        assertEquals(1015.4, st.pressureHpa!!, 0.01)
+        assertEquals("19-11-2026 14:00", st.observedAt)
     }
 
     @Test
-    fun `parseWarningsJson detects Cod Galben and Cod Portocaliu severities`() {
+    fun `parseWarningsJson strips HTML tags decodes entities and detects severity`() {
         val sampleAlerts = """
             [
               {
-                "titlu": "Atenționare Cod Galben de instabilitate atmosferică",
-                "descriere": "În județul Brașov se vor semnala averse torențiale.",
-                "valabilitate": "19.11.2026 14:00 - 21:00"
-              },
-              {
-                "titlu": "Avertizare Cod Portocaliu de vijelii",
-                "descriere": "Intensificări puternice ale vântului.",
-                "valabilitate": "19.11.2026 15:00 - 18:00"
+                "mesaj": "<p style=\"text-align: center;\"><strong>MESAJ 4/5</strong></p><p><strong>AVERTIZARE METEOROLOGICĂ</strong></p><p><img src=\"../wp-content/plugins/meteo/admin/images/galben.gif\" /><strong>COD GALBEN<br /> Interval de valabilitate: 20 noiembrie, ora 1 &ndash; 20 noiembrie, ora 10<br /> Fenomene vizate: intensificări ale v&acirc;ntului &icirc;n Banat</strong></p>"
               }
             ]
         """.trimIndent()
 
-        val warnings = api.parseWarningsJson(sampleAlerts, "Nowcasting")
-        assertEquals(2, warnings.size)
-        assertEquals(AlertSeverity.ORANGE, warnings[0].severity)
-        assertEquals(AlertSeverity.YELLOW, warnings[1].severity)
-        assertTrue(warnings[1].body.contains("Brașov"))
+        val warnings = api.parseWarningsJson(sampleAlerts, "Avertizare generală")
+        assertEquals(1, warnings.size)
+        val w = warnings.first()
+        assertEquals(AlertSeverity.YELLOW, w.severity)
+        assertEquals("MESAJ 4/5 — AVERTIZARE METEOROLOGICĂ", w.title)
+        assertFalse(w.body.contains("<p"))
+        assertFalse(w.body.contains("&ndash;"))
+        assertTrue(w.body.contains("1 – 20 noiembrie"))
+        assertTrue(w.body.contains("vântului în Banat"))
     }
 
     @Test
@@ -71,14 +72,14 @@ class AnmParserTest {
               "data": [
                 {
                   "oras": "BRASOV",
-                  "tmin": "14",
-                  "tmax": "26",
+                  "tmin": "6",
+                  "tmax": "16",
                   "fenomen": "Parțial noros"
                 },
                 {
                   "oras": "BRASOV",
-                  "tmin": "13",
-                  "tmax": "22",
+                  "tmin": "7",
+                  "tmax": "15",
                   "fenomen": "Ploaie slabă"
                 }
               ]
@@ -89,7 +90,7 @@ class AnmParserTest {
         assertEquals(2, forecast.size)
         assertEquals("Astăzi", forecast[0].dayLabel)
         assertEquals("Mâine", forecast[1].dayLabel)
-        assertEquals(14.0, forecast[0].minTemp!!, 0.01)
-        assertEquals(26.0, forecast[0].maxTemp!!, 0.01)
+        assertEquals(6.0, forecast[0].minTemp!!, 0.01)
+        assertEquals(16.0, forecast[0].maxTemp!!, 0.01)
     }
 }

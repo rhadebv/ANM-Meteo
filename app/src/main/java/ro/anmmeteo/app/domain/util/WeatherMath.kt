@@ -16,10 +16,87 @@ import kotlin.math.sqrt
 object WeatherMath {
 
     private val numberRegex = Regex("-?\\d+(?:[.,]\\d+)?")
+    private val htmlTagRegex = Regex("<[^>]*>")
+    private val lineBreakTagRegex = Regex("(?i)<\\s*(br|/?p|/?div|/?li|/?tr|/?h[1-6])\\b[^>]*>")
+    private val numericEntityRegex = Regex("&#(x?[0-9a-fA-F]+);")
+
+    private val namedHtmlEntities = mapOf(
+        "&nbsp;" to " ",
+        "&ndash;" to "–",
+        "&mdash;" to "—",
+        "&rsquo;" to "’",
+        "&lsquo;" to "‘",
+        "&rdquo;" to "”",
+        "&ldquo;" to "“",
+        "&bdquo;" to "„",
+        "&hellip;" to "…",
+        "&deg;" to "°",
+        "&acirc;" to "â",
+        "&Acirc;" to "Â",
+        "&icirc;" to "î",
+        "&Icirc;" to "Î",
+        "&abreve;" to "ă",
+        "&Abreve;" to "Ă",
+        "&scedil;" to "ș",
+        "&Scedil;" to "Ș",
+        "&scomma;" to "ș",
+        "&Scomma;" to "Ș",
+        "&tcedil;" to "ț",
+        "&Tcedil;" to "Ț",
+        "&tcomma;" to "ț",
+        "&Tcomma;" to "Ț",
+        "&quot;" to "\"",
+        "&apos;" to "'",
+        "&lt;" to "<",
+        "&gt;" to ">",
+        "&amp;" to "&"
+    )
 
     fun parseNumber(raw: String?): Double? {
         if (raw.isNullOrBlank()) return null
         return numberRegex.find(raw)?.value?.replace(',', '.')?.toDoubleOrNull()
+    }
+
+    fun parseWindKmh(raw: String?): Double? {
+        if (raw.isNullOrBlank() || raw == "—") return null
+        val lower = raw.lowercase(Locale("ro", "RO"))
+        val num = parseNumber(raw)
+        if (num == null) {
+            return if (lower.contains("calm")) 0.0 else null
+        }
+        return if (lower.contains("m/s")) num * 3.6 else num
+    }
+
+    fun cleanHtmlText(raw: String): String {
+        if (raw.isBlank() || raw == "—") return ""
+        var text = lineBreakTagRegex.replace(raw, "\n")
+        text = htmlTagRegex.replace(text, " ")
+
+        for ((entity, replacement) in namedHtmlEntities) {
+            if (text.contains(entity)) {
+                text = text.replace(entity, replacement)
+            }
+        }
+
+        text = numericEntityRegex.replace(text) { match ->
+            val token = match.groupValues[1]
+            val codePoint = if (token.startsWith("x", ignoreCase = true)) {
+                token.substring(1).toIntOrNull(16)
+            } else {
+                token.toIntOrNull(10)
+            }
+            if (codePoint != null && codePoint in 1..0x10FFFF) {
+                String(Character.toChars(codePoint))
+            } else {
+                match.value
+            }
+        }
+
+        return text
+            .lines()
+            .map { line -> line.replace(Regex("[ \t\u00A0]+"), " ").trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString("\n")
     }
 
     fun formatTemp(raw: String): String {
@@ -53,6 +130,14 @@ object WeatherMath {
             .replace("Fagaras", "Făgăraș")
             .replace("Sfantu ", "Sfântu ")
             .replace("Calarasi", "Călărași")
+            .replace("Bacau", "Bacău")
+            .replace("Braila", "Brăila")
+            .replace("Buzau", "Buzău")
+            .replace("Piatra Neamt", "Piatra Neamț")
+            .replace("Ramnicu Valcea", "Râmnicu Vâlcea")
+            .replace("Bistrita", "Bistrița")
+            .replace("Botosani", "Botoșani")
+            .replace("Focsani", "Focșani")
     }
 
     fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
@@ -162,7 +247,7 @@ object WeatherMath {
             val cloudFactor = when {
                 cond.contains("furtun") || cond.contains("ploa") || cond.contains("ninso") -> 0.35
                 cond.contains("acoperit") || cond.contains("noros") || cond.contains("cea") -> 0.55
-                cond.contains("parțial") || cond.contains("variabil") -> 0.80
+                cond.contains("parțial") || cond.contains("partial") || cond.contains("variabil") -> 0.80
                 else -> 1.0
             }
             (9.0 * solarElevationFactor * seasonFactor * cloudFactor).roundToInt().coerceIn(1, 10)
@@ -192,9 +277,8 @@ object WeatherMath {
         condition: String,
         currentHour: Int
     ): List<HourlyPoint> {
-        val base = currentTemp ?: 18.0
-        val minT = todayMin ?: (base - 5.0)
-        val maxT = todayMax ?: (base + 4.0)
+        val minT = todayMin ?: ((currentTemp ?: 12.0) - 4.0)
+        val maxT = todayMax ?: ((currentTemp ?: 12.0) + 4.0)
         val mid = (minT + maxT) / 2.0
         val amp = max(1.5, (maxT - minT) / 2.0)
 
@@ -202,6 +286,7 @@ object WeatherMath {
             return mid + amp * cos(Math.toRadians((h - 15) * 15.0))
         }
 
+        val base = currentTemp ?: diurnal(currentHour)
         val offset = base - diurnal(currentHour)
 
         return (0 until 12).map { step ->
