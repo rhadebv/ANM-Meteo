@@ -78,7 +78,7 @@ class PreferencesStorage(private val context: Context) {
         if (ids.isEmpty()) return
         context.dataStore.edit { prefs ->
             val current = prefs[Keys.SEEN_ALERT_IDS] ?: emptySet()
-            prefs[Keys.SEEN_ALERT_IDS] = (current + ids).takeLast(150).toSet()
+            prefs[Keys.SEEN_ALERT_IDS] = (current + ids).toList().takeLast(150).toSet()
         }
     }
 }

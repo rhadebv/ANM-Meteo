@@ -231,8 +231,7 @@ private fun AlertDetailCard(alert: WeatherAlert) {
                             type = "text/plain"
                             putExtra(
                                 Intent.EXTRA_TEXT,
-                                "⚠ ${alert.severity.label} (ANM - ${alert.source}): ${alert.title}
-${alert.body}"
+                                "⚠ ${alert.severity.label} (ANM - ${alert.source}): ${alert.title}\n${alert.body}"
                             )
                         }
                         context.startActivity(Intent.createChooser(shareIntent, "Distribuie avertizarea ANM"))

@@ -57,8 +57,7 @@ object AlertNotificationHelper {
             .setContentText(alert.title)
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText(if (alert.body.isNotBlank()) "${alert.title}
-${alert.body}" else alert.title)
+                    .bigText(if (alert.body.isNotBlank()) "${alert.title}\n${alert.body}" else alert.title)
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)

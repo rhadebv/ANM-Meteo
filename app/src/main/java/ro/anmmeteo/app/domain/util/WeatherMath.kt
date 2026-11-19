@@ -15,7 +15,7 @@ import kotlin.math.sqrt
 
 object WeatherMath {
 
-    private val numberRegex = Regex("-?\d+(?:[.,]\d+)?")
+    private val numberRegex = Regex("-?\\d+(?:[.,]\\d+)?")
 
     fun parseNumber(raw: String?): Double? {
         if (raw.isNullOrBlank()) return null
